@@ -1,0 +1,17 @@
+services:
+  - type: worker
+    name: telegram-userbot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: API_ID
+        value: "22376342"
+      - key: API_HASH
+        value: "f623dc4ae2b015463cfde7874ab0f270"
+      - key: BOT_TOKEN
+        value: "8993460481:AAF_v-ivofnXgweAoItsefcLxoMgxClzOJA"
+      - key: PHONE
+        value: ""
+      - key: SESSION_STRING
+        value: ""
