@@ -1,4 +1,5 @@
 from telethon import TelegramClient, events
+from telethon.errors import SessionPasswordNeededError
 import asyncio
 import os
 from datetime import datetime, timedelta
@@ -19,19 +20,136 @@ bot = TelegramClient('bot_session', api_id, api_hash)
 # Хранилище активных задач
 active_tasks = {}
 
-# HTTP сервер для Render Web Service
+# Для веб-авторизации
+auth_code = None
+auth_password = None
+code_event = asyncio.Event()
+password_event = asyncio.Event()
+
+# HTML страница для ввода кода
+HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram Auth</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial; text-align: center; padding: 50px; background: #1a1a2e; color: white; }
+        input { padding: 15px; font-size: 20px; width: 300px; margin: 10px; border-radius: 10px; border: none; }
+        button { padding: 15px 30px; font-size: 20px; background: #00d2ff; color: white; border: none; border-radius: 10px; cursor: pointer; }
+        button:hover { background: #0088cc; }
+    </style>
+</head>
+<body>
+    <h1>🤖 Telegram Auth</h1>
+    <h2 id="status">Введите код подтверждения</h2>
+    <input type="text" id="code" placeholder="Код из Telegram">
+    <br>
+    <button onclick="submitCode()">Отправить код</button>
+    <script>
+        async function submitCode() {
+            const code = document.getElementById('code').value;
+            const response = await fetch('/code?code=' + code);
+            const text = await response.text();
+            document.getElementById('status').innerText = text;
+            if (text.includes('успешно') || text.includes('Waiting')) {
+                document.getElementById('status').style.color = '#00ff00';
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
+HTML_PASSWORD = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram Auth</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial; text-align: center; padding: 50px; background: #1a1a2e; color: white; }
+        input { padding: 15px; font-size: 20px; width: 300px; margin: 10px; border-radius: 10px; border: none; }
+        button { padding: 15px 30px; font-size: 20px; background: #00d2ff; color: white; border: none; border-radius: 10px; cursor: pointer; }
+        button:hover { background: #0088cc; }
+    </style>
+</head>
+<body>
+    <h1>🔐 Облачный пароль</h1>
+    <h2 id="status">Введите ваш облачный пароль</h2>
+    <input type="password" id="password" placeholder="Пароль">
+    <br>
+    <button onclick="submitPassword()">Отправить</button>
+    <script>
+        async function submitPassword() {
+            const password = document.getElementById('password').value;
+            const response = await fetch('/password?password=' + password);
+            const text = await response.text();
+            document.getElementById('status').innerText = text;
+        }
+    </script>
+</body>
+</html>
+"""
+
 async def handle_health(request):
     return web.Response(text="Bot is running!")
+
+async def handle_code(request):
+    global auth_code
+    code = request.query.get('code', '')
+    if code:
+        auth_code = code
+        code_event.set()
+        return web.Response(text="✅ Код получен! Можно закрыть страницу.")
+    return web.Response(text="❌ Код не указан")
+
+async def handle_password(request):
+    global auth_password
+    password = request.query.get('password', '')
+    if password:
+        auth_password = password
+        password_event.set()
+        return web.Response(text="✅ Пароль получен! Можно закрыть страницу.")
+    return web.Response(text="❌ Пароль не указан")
+
+async def auth_page(request):
+    if 'password' in request.url.path:
+        return web.Response(text=HTML_PASSWORD, content_type='text/html')
+    return web.Response(text=HTML_PAGE, content_type='text/html')
 
 async def start_http_server():
     app = web.Application()
     app.router.add_get('/', handle_health)
     app.router.add_get('/health', handle_health)
+    app.router.add_get('/code', handle_code)
+    app.router.add_get('/password', handle_password)
+    app.router.add_get('/auth', auth_page)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
     print(f"✅ HTTP сервер запущен на порту {PORT}")
+    print(f"🌐 Страница авторизации: http://0.0.0.0:{PORT}/auth")
+
+async def phone_code_callback():
+    """Кастомная функция для получения кода через веб"""
+    global code_event
+    code_event.clear()
+    print("⏳ Ожидание кода через веб-интерфейс...")
+    print(f"🌐 Откройте /auth на вашем сервере и введите код")
+    await code_event.wait()
+    return auth_code
+
+async def password_callback():
+    """Кастомная функция для получения пароля через веб"""
+    global password_event
+    password_event.clear()
+    print("⏳ Ожидание облачного пароля через веб-интерфейс...")
+    await password_event.wait()
+    return auth_password
 
 async def send_message_to_chat(chat_id, message):
     """Отправляет одно сообщение в чат"""
@@ -281,32 +399,53 @@ async def tasks_handler(event):
     await event.reply(tasks_list)
 
 async def main():
-    # Запускаем HTTP сервер
+    # Запускаем HTTP сервер с веб-интерфейсом авторизации
     await start_http_server()
     
-    # Вход в аккаунт
-    if session_string:
-        await client.start(session_string=session_string)
-    elif phone:
-        await client.start(phone=phone)
-    else:
-        await client.start()
+    print("\n🔐 Начинаем авторизацию...")
     
-    print("✅ Юзербот запущен")
+    try:
+        # Пробуем войти с существующей сессией
+        if session_string:
+            print("📱 Вход по SESSION_STRING...")
+            await client.start(session_string=session_string)
+        elif phone:
+            print(f"📱 Вход по номеру {phone}...")
+            await client.start(phone=phone)
+        else:
+            print("📱 Интерактивный вход...")
+            # Запускаем клиент с веб-колбэками
+            await client.start(
+                phone=phone if phone else lambda: input('Введите номер: '),
+                code_callback=phone_code_callback,
+                password_callback=password_callback
+            )
+        
+        print("✅ Юзербот успешно авторизован!")
+        
+        # Сохраняем сессию для будущих запусков
+        me = await client.get_me()
+        print(f"👤 Вошли как: {me.first_name} (@{me.username})")
+        
+    except Exception as e:
+        print(f"❌ Ошибка авторизации: {e}")
+        print("💡 Откройте /auth на вашем сервере для ввода кода")
     
     # Запуск бота
+    print("\n🤖 Запускаем бота...")
     await bot.start(bot_token=bot_token)
-    print("✅ Бот запущен")
-    print(f"\n🌐 Web Service запущен на порту {PORT}")
-    print("\n📋 Доступные команды:")
-    print("  /start - начало работы")
-    print("  /send - одиночная отправка")
-    print("  /multi - несколько сообщений")
-    print("  /interval - с интервалом")
-    print("  /repeat - повторять")
-    print("  /stop - остановить")
-    print("  /tasks - список задач")
-    print("  /help - справка\n")
+    print("✅ Бот запущен!")
+    print(f"\n🌐 Сервер: http://0.0.0.0:{PORT}")
+    print(f"🔑 Авторизация: http://0.0.0.0:{PORT}/auth")
+    print("\n📋 Команды для бота в Telegram:")
+    print("  /start - Начать работу")
+    print("  /send - Отправить сообщение")
+    print("  /multi - Несколько сообщений")
+    print("  /interval - С интервалом")
+    print("  /repeat - Повторять")
+    print("  /tasks - Активные задачи")
+    print("  /stop - Остановить задачу")
+    print("  /help - Справка\n")
     
     await asyncio.gather(
         client.run_until_disconnected(),
