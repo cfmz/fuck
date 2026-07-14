@@ -83,29 +83,235 @@ async def scheduled_task(task_id, chat_ids, messages, interval, repeat_count=Non
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def start_handler(event):
-    help_text = """
-👋 **Юзербот для рассылки сообщений**
-
-**Основные команды:**
-• `/send чаты | сообщение` - Одиночная отправка
-• `/multi чаты | сообщение1 ;; сообщение2 ;; сообщение3` - Несколько сообщений
-• `/interval чаты | интервал_сек | сообщение1 ;; сообщение2` - С интервалом
-• `/repeat чаты | интервал_сек | повторы | сообщение1 ;; сообщение2` - Повторять
-• `/stop task_id` - Остановить задачу
-• `/tasks` - Список активных задач
-• `/help` - Подробная справка
-
-**Примеры:**
-`/send @user1 @user2 | Привет!`
-`/multi @user1 | Сообщение 1 ;; Сообщение 2 ;; Сообщение 3`
-`/interval @user1 | 5 | Сообщение 1 ;; Сообщение 2`
-`/repeat @user1 | 60 | 10 | Привет ;; Как дела?`
-    """
-    await event.reply(help_text)
+    await event.reply(
+        "👋 **Юзербот для рассылки сообщений**\n\n"
+        "**Основные команды:**\n"
+        "• `/send чаты | сообщение` - Одиночная отправка\n"
+        "• `/multi чаты | сообщение1 ;; сообщение2` - Несколько сообщений\n"
+        "• `/interval чаты | интервал_сек | сообщение1 ;; сообщение2` - С интервалом\n"
+        "• `/repeat чаты | интервал_сек | повторы | сообщение1 ;; сообщение2` - Повторять\n"
+        "• `/stop task_id` - Остановить задачу\n"
+        "• `/tasks` - Список активных задач\n"
+        "• `/help` - Подробная справка\n\n"
+        "**Примеры:**\n"
+        "`/send @user1 @user2 | Привет!`\n"
+        "`/multi @user1 | Сообщение 1 ;; Сообщение 2 ;; Сообщение 3`\n"
+        "`/interval @user1 | 5 | Сообщение 1 ;; Сообщение 2`\n"
+        "`/repeat @user1 | 60 | 10 | Привет ;; Как дела?`"
+    )
 
 @bot.on(events.NewMessage(pattern='/help'))
 async def help_handler(event):
-    help_text = """
-📚 **Подробная справка**
+    await event.reply(
+        "📚 **Подробная справка**\n\n"
+        "**1. /send - Отправка одного сообщения**\n"
+        "`/send @user1 @user2 | Привет всем!`\n"
+        "Отправляет одно сообщение во все указанные чаты\n\n"
+        "**2. /multi - Несколько сообщений подряд**\n"
+        "`/multi @user1 @user2 | Сообщение 1 ;; Сообщение 2 ;; Сообщение 3`\n"
+        "Отправляет все сообщения в каждый чат. Разделитель `;;`\n\n"
+        "**3. /interval - Сообщения с паузой**\n"
+        "`/interval @user1 | 10 | Сообщение 1 ;; Сообщение 2 ;; Сообщение 3`\n"
+        "Пауза 10 секунд между отправкой каждого сообщения\n\n"
+        "**4. /repeat - Периодическая отправка**\n"
+        "`/repeat @user1 @user2 | 3600 | 5 | Привет ;; Как дела?`\n"
+        "Повторяет отправку 5 раз с интервалом 3600 сек (1 час)\n\n"
+        "**5. /stop - Остановка задачи**\n"
+        "`/stop task_id`\n\n"
+        "**6. /tasks - Просмотр активных задач**\n"
+        "`/tasks`\n\n"
+        "**Форматы чатов:**\n"
+        "• @username - пользователь\n"
+        "• @channel - канал\n"
+        "• -123456789 - группа (ID)\n"
+        "• 123456789 - пользователь (ID)"
+    )
 
-**1. /send - Отправка одного сообщения**
+@bot.on(events.NewMessage(pattern='/send'))
+async def send_handler(event):
+    try:
+        command = event.message.text[len('/send '):]
+        if '|' not in command:
+            await event.reply("❌ Формат: /send чаты | сообщение")
+            return
+        
+        chats_part, message = command.split('|', 1)
+        chat_ids = [c.strip() for c in chats_part.strip().split() if c.strip()]
+        
+        if not chat_ids or not message.strip():
+            await event.reply("❌ Укажите чаты и сообщение")
+            return
+        
+        await event.reply(f"🔄 Отправляю в {len(chat_ids)} чатов...")
+        
+        results = []
+        for chat_id in chat_ids:
+            success, result = await send_message_to_chat(chat_id, message.strip())
+            results.append(result)
+        
+        await event.reply(f"📊 Результаты:\n" + "\n".join(results))
+        
+    except Exception as e:
+        await event.reply(f"❌ Ошибка: {e}")
+
+@bot.on(events.NewMessage(pattern='/multi'))
+async def multi_handler(event):
+    try:
+        command = event.message.text[len('/multi '):]
+        if '|' not in command:
+            await event.reply("❌ Формат: /multi чаты | сообщение1 ;; сообщение2 ;; сообщение3")
+            return
+        
+        chats_part, messages_part = command.split('|', 1)
+        chat_ids = [c.strip() for c in chats_part.strip().split() if c.strip()]
+        messages = [m.strip() for m in messages_part.split(';;') if m.strip()]
+        
+        if not chat_ids or not messages:
+            await event.reply("❌ Укажите чаты и сообщения")
+            return
+        
+        await event.reply(f"🔄 Отправляю {len(messages)} сообщений в {len(chat_ids)} чатов...")
+        result = await send_multiple_messages(chat_ids, messages)
+        await event.reply(f"📊 Результаты:\n{result}")
+        
+    except Exception as e:
+        await event.reply(f"❌ Ошибка: {e}")
+
+@bot.on(events.NewMessage(pattern='/interval'))
+async def interval_handler(event):
+    try:
+        command = event.message.text[len('/interval '):]
+        parts = command.split('|')
+        
+        if len(parts) != 3:
+            await event.reply("❌ Формат: /interval чаты | интервал_сек | сообщение1 ;; сообщение2")
+            return
+        
+        chats_part = parts[0].strip()
+        interval = int(parts[1].strip())
+        messages_part = parts[2].strip()
+        
+        chat_ids = [c.strip() for c in chats_part.split() if c.strip()]
+        messages = [m.strip() for m in messages_part.split(';;') if m.strip()]
+        
+        if not chat_ids or not messages:
+            await event.reply("❌ Укажите чаты и сообщения")
+            return
+        
+        await event.reply(f"⏱ Начинаю отправку с интервалом {interval} сек...")
+        
+        task_id = f"interval_{datetime.now().timestamp()}"
+        task = asyncio.create_task(send_multiple_messages(chat_ids, messages, interval))
+        active_tasks[task_id] = task
+        
+        await event.reply(f"✅ Задача {task_id} запущена")
+        
+    except ValueError:
+        await event.reply("❌ Интервал должен быть числом")
+    except Exception as e:
+        await event.reply(f"❌ Ошибка: {e}")
+
+@bot.on(events.NewMessage(pattern='/repeat'))
+async def repeat_handler(event):
+    try:
+        command = event.message.text[len('/repeat '):]
+        parts = command.split('|')
+        
+        if len(parts) != 4:
+            await event.reply("❌ Формат: /repeat чаты | интервал_сек | количество | сообщение1 ;; сообщение2")
+            return
+        
+        chats_part = parts[0].strip()
+        interval = int(parts[1].strip())
+        repeat_count = int(parts[2].strip())
+        messages_part = parts[3].strip()
+        
+        chat_ids = [c.strip() for c in chats_part.split() if c.strip()]
+        messages = [m.strip() for m in messages_part.split(';;') if m.strip()]
+        
+        if not chat_ids or not messages:
+            await event.reply("❌ Укажите чаты и сообщения")
+            return
+        
+        task_id = f"repeat_{datetime.now().timestamp()}"
+        task = asyncio.create_task(
+            scheduled_task(task_id, chat_ids, messages, interval, repeat_count)
+        )
+        active_tasks[task_id] = task
+        
+        await event.reply(
+            f"🔄 Задача {task_id} запущена\n"
+            f"• Чаты: {len(chat_ids)}\n"
+            f"• Сообщений: {len(messages)}\n"
+            f"• Интервал: {interval} сек\n"
+            f"• Повторов: {repeat_count}"
+        )
+        
+    except ValueError:
+        await event.reply("❌ Интервал и количество должны быть числами")
+    except Exception as e:
+        await event.reply(f"❌ Ошибка: {e}")
+
+@bot.on(events.NewMessage(pattern='/stop'))
+async def stop_handler(event):
+    try:
+        task_id = event.message.text[len('/stop '):].strip()
+        
+        if task_id in active_tasks:
+            active_tasks[task_id].cancel()
+            del active_tasks[task_id]
+            await event.reply(f"✅ Задача {task_id} остановлена")
+        else:
+            await event.reply(f"❌ Задача {task_id} не найдена")
+            
+    except Exception as e:
+        await event.reply(f"❌ Ошибка: {e}")
+
+@bot.on(events.NewMessage(pattern='/tasks'))
+async def tasks_handler(event):
+    if not active_tasks:
+        await event.reply("📭 Нет активных задач")
+        return
+    
+    tasks_list = "📋 **Активные задачи:**\n\n"
+    for task_id, task in active_tasks.items():
+        status = "🟢 Выполняется" if not task.done() else "🔴 Завершена"
+        tasks_list += f"• `{task_id}` - {status}\n"
+    
+    await event.reply(tasks_list)
+
+async def main():
+    # Запускаем HTTP сервер
+    await start_http_server()
+    
+    # Вход в аккаунт
+    if session_string:
+        await client.start(session_string=session_string)
+    elif phone:
+        await client.start(phone=phone)
+    else:
+        await client.start()
+    
+    print("✅ Юзербот запущен")
+    
+    # Запуск бота
+    await bot.start(bot_token=bot_token)
+    print("✅ Бот запущен")
+    print(f"\n🌐 Web Service запущен на порту {PORT}")
+    print("\n📋 Доступные команды:")
+    print("  /start - начало работы")
+    print("  /send - одиночная отправка")
+    print("  /multi - несколько сообщений")
+    print("  /interval - с интервалом")
+    print("  /repeat - повторять")
+    print("  /stop - остановить")
+    print("  /tasks - список задач")
+    print("  /help - справка\n")
+    
+    await asyncio.gather(
+        client.run_until_disconnected(),
+        bot.run_until_disconnected()
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
