@@ -2,6 +2,7 @@ from telethon import TelegramClient, events
 import asyncio
 import os
 from datetime import datetime, timedelta
+from aiohttp import web
 
 # Данные из переменных окружения
 api_id = int(os.getenv('API_ID', '22376342'))
@@ -9,6 +10,7 @@ api_hash = os.getenv('API_HASH', 'f623dc4ae2b015463cfde7874ab0f270')
 bot_token = os.getenv('BOT_TOKEN', '8993460481:AAF_v-ivofnXgweAoItsefcLxoMgxClzOJA')
 phone = os.getenv('PHONE')
 session_string = os.getenv('SESSION_STRING')
+PORT = int(os.getenv('PORT', 10000))
 
 # Клиенты
 client = TelegramClient('user_session', api_id, api_hash)
@@ -16,6 +18,20 @@ bot = TelegramClient('bot_session', api_id, api_hash)
 
 # Хранилище активных задач
 active_tasks = {}
+
+# HTTP сервер для Render Web Service
+async def handle_health(request):
+    return web.Response(text="Bot is running!")
+
+async def start_http_server():
+    app = web.Application()
+    app.router.add_get('/', handle_health)
+    app.router.add_get('/health', handle_health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    print(f"✅ HTTP сервер запущен на порту {PORT}")
 
 async def send_message_to_chat(chat_id, message):
     """Отправляет одно сообщение в чат"""
@@ -30,16 +46,14 @@ async def send_multiple_messages(chat_ids, messages, interval=0):
     """Отправляет несколько сообщений в чаты с интервалом"""
     results = []
     
-    # Если интервал указан, отправляем по одному сообщению с паузой
     if interval > 0:
         for msg in messages:
             for chat_id in chat_ids:
                 success, result = await send_message_to_chat(chat_id, msg)
                 results.append(result)
-            if msg != messages[-1]:  # Не ждать после последнего сообщения
+            if msg != messages[-1]:
                 await asyncio.sleep(interval)
     else:
-        # Без интервала - отправляем всё сразу
         for chat_id in chat_ids:
             for msg in messages:
                 success, result = await send_message_to_chat(chat_id, msg)
@@ -60,7 +74,7 @@ async def scheduled_task(task_id, chat_ids, messages, interval, repeat_count=Non
         for msg in messages:
             for chat_id in chat_ids:
                 await send_message_to_chat(chat_id, f"{msg}")
-                await asyncio.sleep(0.5)  # Маленькая пауза между сообщениями
+                await asyncio.sleep(0.5)
         
         if repeat_count and count >= repeat_count:
             break
