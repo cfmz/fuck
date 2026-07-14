@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # Данные из переменных окружения
 api_id = int(os.getenv('API_ID', '22376342'))
 api_hash = os.getenv('API_HASH', 'f623dc4ae2b015463cfde7874ab0f270')
-bot_token = os.getenv('BOT_TOKEN', '8993460481:AAFaL2O_zj3XMDUIGtXn44xcmuUG5YdpucU')
+bot_token = os.getenv('BOT_TOKEN', '8993460481:AAF_v-ivofnXgweAoItsefcLxoMgxClzOJA')
 phone = os.getenv('PHONE')
 session_string = os.getenv('SESSION_STRING')
 
